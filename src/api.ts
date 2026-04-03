@@ -42,13 +42,6 @@ export interface IListFilesOptions {
 	packageManager?: PackageManager;
 
 	/**
-	 * A subset of the top level dependencies which should be included. The
-	 * default is `undefined` which include all dependencies, an empty array means
-	 * no dependencies will be included.
-	 */
-	packagedDependencies?: string[];
-
-	/**
 	 * The location of an alternative .vscodeignore file to be used.
 	 * The `.vscodeignore` file located at the root of the project will be taken
 	 * instead, if none is specified.

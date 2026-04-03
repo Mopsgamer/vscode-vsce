@@ -70,20 +70,13 @@ module.exports = function (argv: string[]): void {
 		.option('--tree', 'Prints the files in a tree format', false)
 		.option('--yarn', 'Use yarn instead of npm (default inferred from presence of yarn.lock or .yarnrc)')
 		.option('--no-yarn', 'Use npm instead of yarn (default inferred from absence of yarn.lock or .yarnrc)')
-		.option<string[]>(
-			'--packagedDependencies <path>',
-			'Select packages that should be published only (includes dependencies)',
-			(val, all) => (all ? all.concat(val) : [val]),
-			undefined
-		)
 		.option('--ignoreFile <path>', 'Indicate alternative .vscodeignore')
 		// default must remain undefined for dependencies or we will fail to load defaults from package.json
 		.option('--dependencies', 'Enable dependency detection via npm or yarn', undefined)
 		.option('--no-dependencies', 'Disable dependency detection via npm or yarn', undefined)
 		.option('--readme-path <path>', 'Path to README file (defaults to README.md)')
-		.option('--follow-symlinks', 'Recurse into symlinked directories instead of treating them as files')
-		.action(({ tree, yarn, packagedDependencies, ignoreFile, dependencies, readmePath, followSymlinks }) =>
-			main(ls({ tree, useYarn: yarn, packagedDependencies, ignoreFile, dependencies, readmePath, followSymlinks }))
+		.action(({ tree, yarn, ignoreFile, dependencies, readmePath }) =>
+			main(ls({ tree, useYarn: yarn, ignoreFile, dependencies, readmePath }))
 		);
 
 	program
@@ -129,7 +122,6 @@ module.exports = function (argv: string[]): void {
 		.option('--allow-package-env-file', 'Allow packaging .env files')
 		.option('--skip-license', 'Allow packaging without license file')
 		.option('--sign-tool <path>', 'Path to the VSIX signing tool. Will be invoked with two arguments: `SIGNTOOL <path/to/extension.signature.manifest> <path/to/extension.signature.p7s>`.')
-		.option('--follow-symlinks', 'Recurse into symlinked directories instead of treating them as files')
 		.action(
 			(
 				version,
@@ -161,7 +153,6 @@ module.exports = function (argv: string[]): void {
 					allowPackageEnvFile,
 					skipLicense,
 					signTool,
-					followSymlinks,
 				}
 			) =>
 				main(
@@ -194,7 +185,6 @@ module.exports = function (argv: string[]): void {
 						allowPackageEnvFile,
 						skipLicense,
 						signTool,
-						followSymlinks,
 					})
 				)
 		);
@@ -252,7 +242,6 @@ module.exports = function (argv: string[]): void {
 		.option('--allow-unused-files-pattern', 'Allow include patterns for the files field in package.json that does not match any file')
 		.option('--skip-duplicate', 'Fail silently if version already exists on the marketplace')
 		.option('--skip-license', 'Allow publishing without license file')
-		.option('--follow-symlinks', 'Recurse into symlinked directories instead of treating them as files')
 		.action(
 			(
 				version,
@@ -291,7 +280,6 @@ module.exports = function (argv: string[]): void {
 					skipDuplicate,
 					skipLicense,
 					signTool,
-					followSymlinks,
 				}
 			) =>
 				main(
@@ -330,7 +318,6 @@ module.exports = function (argv: string[]): void {
 						skipDuplicate,
 						skipLicense,
 						signTool,
-						followSymlinks
 					})
 				)
 		);

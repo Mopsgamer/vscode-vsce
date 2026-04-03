@@ -55,13 +55,7 @@ export interface IPublishOptions {
 	 * Should use Yarn instead of NPM.
 	 */
 	readonly useYarn?: boolean;
-	readonly dependencyEntryPoints?: string[];
 	readonly ignoreFile?: string;
-
-	/**
-	 * Recurse into symlinked directories instead of treating them as files
-	 */
-	readonly followSymlinks?: boolean;
 
 	/**
 	 * The Personal Access Token to use.

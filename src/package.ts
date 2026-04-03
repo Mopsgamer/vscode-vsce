@@ -6,7 +6,6 @@ import * as yazl from 'yazl';
 import { ExtensionKind, ManifestPackage, UnverifiedManifest } from './manifest';
 import { ITranslations, patchNLS } from './nls';
 import * as util from './util';
-import { glob } from 'glob';
 import minimatch from 'minimatch';
 import markdownit from 'markdown-it';
 import * as cheerio from 'cheerio';
@@ -23,11 +22,13 @@ import {
 	validatePublisher,
 	validateExtensionDependencies,
 } from './validation';
-import { detectYarn, getDependencies } from './npm';
+import { detectYarn } from './npm';
 import * as GitHost from 'hosted-git-info';
 import parseSemver from 'parse-semver';
 import * as jsonc from 'jsonc-parser';
 import * as vsceSign from '@vscode/vsce-sign';
+import { Arborist } from "@npmcli/arborist";
+import packlist from "npm-packlist";
 import { getRuleNameFromRuleId, lintFiles, lintText, prettyPrintLintResult } from './secretLint';
 
 const MinimatchOptions: minimatch.IOptions = { dot: true };
@@ -104,11 +105,6 @@ export interface IPackageOptions {
 	 */
 	readonly ignoreOtherTargetFolders?: boolean;
 
-	/**
-	 * Recurse into symlinked directories instead of treating them as files.
-	 */
-	readonly followSymlinks?: boolean;
-
 	readonly commitMessage?: string;
 	readonly gitTagVersion?: boolean;
 	readonly updatePackageJson?: boolean;
@@ -150,7 +146,6 @@ export interface IPackageOptions {
 	 * Should use Yarn instead of NPM.
 	 */
 	readonly useYarn?: boolean;
-	readonly dependencyEntryPoints?: string[];
 	readonly ignoreFile?: string;
 	readonly gitHubIssueLinking?: boolean;
 	readonly gitLabIssueLinking?: boolean;
@@ -1630,6 +1625,17 @@ export async function toContentTypes(files: IFile[]): Promise<string> {
 `;
 }
 
+// DO NOT add overridable defaults here
+const ignoreExactEntryNames = [
+	'.git',
+	'node_modules',
+	'.DS_Store',
+	'.vscode-test-web',
+	'.vscode-test',
+	'.github',
+]
+
+// and here
 const defaultIgnore = [
 	'.vscodeignore',
 	'package-lock.json',
@@ -1653,32 +1659,83 @@ const defaultIgnore = [
 	'CONTRIBUTING.md',
 	'PULL_REQUEST_TEMPLATE.md',
 	'CODE_OF_CONDUCT.md',
-	'.github',
 	'.travis.yml',
 	'appveyor.yml',
-	'**/.git',
-	'**/.git/**',
 	'**/*.vsix',
-	'**/.DS_Store',
 	'**/*.vsixmanifest',
-	'**/.vscode-test/**',
-	'**/.vscode-test-web/**',
 ];
 
 async function collectAllFiles(
-	cwd: string,
-	dependencies: 'npm' | 'yarn' | 'none' | undefined,
-	dependencyEntryPoints?: string[],
-	followSymlinks: boolean = true
+    cwd: string,
+    dependencies: 'npm' | 'yarn' | 'none' | undefined = 'npm',
 ): Promise<string[]> {
-	const deps = await getDependencies(cwd, dependencies, dependencyEntryPoints);
-	const promises = deps.map(dep =>
-		glob('**', { cwd: dep, nodir: true, follow: followSymlinks, dot: true, ignore: 'node_modules/**' }).then(files =>
-			files.map(f => path.relative(cwd, path.join(dep, f))).map(f => f.replace(/\\/g, '/'))
-		)
-	);
+    const arb = new Arborist({ path: cwd });
+    const tree = await arb.loadActual();
 
-	return Promise.all(promises).then(util.flatten);
+    let arbFiles = await packlist(tree);
+
+    const visited = new Set<string>();
+    visited.add(path.resolve(cwd));
+
+    if (dependencies !== 'none') {
+        const prodNodes = tree.inventory.filter(node =>
+            !node.dev && !node.optional && node !== tree
+        );
+
+        const depFiles: string[] = [];
+
+		for (const node of prodNodes) {
+			const realPath = node.realpath;
+
+            if (visited.has(realPath)) {
+                continue;
+            }
+            visited.add(realPath);
+
+			depFiles.push(path.relative(cwd, node.path).replace(/\\/g, '/'));
+		}
+
+        arbFiles = [...arbFiles, ...depFiles];
+    }
+
+    const allFilesNoIgnored = await collectAllFilesNoIgnored(cwd);
+    const final = new Set([...arbFiles, ...allFilesNoIgnored]);
+
+    return [...final];
+}
+
+async function collectAllFilesNoIgnored(
+    cwd: string,
+): Promise<string[]> {
+    const files: string[] = [];
+    const visited = new Set<string>();
+
+    async function walk(fullPath: string, relativePath?: string) {
+        const realPath = await fs.promises.realpath(fullPath);
+        if (visited.has(realPath)) return;
+        visited.add(realPath);
+
+        const entries = await fs.promises.readdir(fullPath, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const entryRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+            const entryFullPath = path.join(fullPath, entry.name);
+
+            if (ignoreExactEntryNames.includes(entry.name)) {
+                continue;
+            }
+
+            if (entry.isDirectory()) {
+                await walk(entryFullPath, entryRelPath);
+				continue;
+            }
+
+			files.push(entryRelPath);
+        }
+    }
+
+    await walk(cwd);
+    return files;
 }
 
 function getDependenciesOption(options: IPackageOptions): 'npm' | 'yarn' | 'none' | undefined {
@@ -1699,16 +1756,14 @@ function getDependenciesOption(options: IPackageOptions): 'npm' | 'yarn' | 'none
 function collectFiles(
 	cwd: string,
 	dependencies: 'npm' | 'yarn' | 'none' | undefined,
-	dependencyEntryPoints?: string[],
 	ignoreFile?: string,
 	manifestFileIncludes?: string[],
 	readmePath?: string,
-	followSymlinks: boolean = false
 ): Promise<string[]> {
 	readmePath = readmePath ?? 'README.md';
 	const notIgnored = ['!package.json', `!${readmePath}`];
 
-	return collectAllFiles(cwd, dependencies, dependencyEntryPoints, followSymlinks).then(files => {
+	return collectAllFiles(cwd, dependencies).then(files => {
 		files = files.filter(f => !/\r$/m.test(f));
 
 		return (
@@ -1811,11 +1866,10 @@ export function createDefaultProcessors(manifest: ManifestPackage, options: IPac
 
 export function collect(manifest: ManifestPackage, options: IPackageOptions = {}): Promise<IFile[]> {
 	const cwd = options.cwd || process.cwd();
-	const packagedDependencies = options.dependencyEntryPoints || undefined;
 	const ignoreFile = options.ignoreFile || undefined;
 	const processors = createDefaultProcessors(manifest, options);
 
-	return collectFiles(cwd, getDependenciesOption(options), packagedDependencies, ignoreFile, manifest.files, options.readmePath, options.followSymlinks).then(fileNames => {
+	return collectFiles(cwd, getDependenciesOption(options), ignoreFile, manifest.files, options.readmePath).then(fileNames => {
 		const files = fileNames.map(f => ({ path: util.filePathToVsixPath(f), localPath: path.join(cwd, f) }));
 
 		return processFiles(processors, files);
@@ -2004,12 +2058,10 @@ export interface IListFilesOptions {
 	readonly cwd?: string;
 	readonly manifest?: ManifestPackage;
 	readonly useYarn?: boolean;
-	readonly packagedDependencies?: string[];
 	readonly ignoreFile?: string;
 	readonly dependencies?: boolean;
 	readonly prepublish?: boolean;
 	readonly readmePath?: string;
-	readonly followSymlinks?: boolean;
 }
 
 /**
@@ -2023,17 +2075,15 @@ export async function listFiles(options: IListFilesOptions = {}): Promise<string
 		await prepublish(cwd, manifest, options.useYarn);
 	}
 
-	return await collectFiles(cwd, getDependenciesOption(options), options.packagedDependencies, options.ignoreFile, manifest.files, options.readmePath, options.followSymlinks);
+	return await collectFiles(cwd, getDependenciesOption(options), options.ignoreFile, manifest.files, options.readmePath);
 }
 
 interface ILSOptions {
 	readonly tree?: boolean;
 	readonly useYarn?: boolean;
-	readonly packagedDependencies?: string[];
 	readonly ignoreFile?: string;
 	readonly dependencies?: boolean;
 	readonly readmePath?: string;
-	readonly followSymlinks?: boolean;
 }
 
 /**

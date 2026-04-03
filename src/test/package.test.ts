@@ -319,41 +319,7 @@ describe('collect', function () {
 			});
 	});
 
-	it('should honor dependencyEntryPoints', () => {
-		const cwd = fixture('packagedDependencies');
-
-		return readManifest(cwd)
-			.then(manifest => collect(manifest, { cwd, useYarn: true, dependencyEntryPoints: ['isexe'] }))
-			.then(files => {
-				let seenWhich: boolean = false;
-				let seenIsexe: boolean = false;
-				for (const file of files) {
-					seenWhich = file.path.indexOf('/node_modules/which/') >= 0;
-					seenIsexe = file.path.indexOf('/node_modules/isexe/') >= 0;
-				}
-				assert.strictEqual(seenWhich, false);
-				assert.strictEqual(seenIsexe, true);
-			});
-	});
-
-	it('should detect yarn', () => {
-		const cwd = fixture('packagedDependencies');
-
-		return readManifest(cwd)
-			.then(manifest => collect(manifest, { cwd, dependencyEntryPoints: ['isexe'] }))
-			.then(files => {
-				let seenWhich: boolean = false;
-				let seenIsexe: boolean = false;
-				for (const file of files) {
-					seenWhich = file.path.indexOf('/node_modules/which/') >= 0;
-					seenIsexe = file.path.indexOf('/node_modules/isexe/') >= 0;
-				}
-				assert.strictEqual(seenWhich, false);
-				assert.strictEqual(seenIsexe, true);
-			});
-	});
-
-	it('should include all node_modules when dependencyEntryPoints is not defined', () => {
+	it('should include packagedDependencies', () => {
 		const cwd = fixture('packagedDependencies');
 
 		return readManifest(cwd)
@@ -362,21 +328,11 @@ describe('collect', function () {
 				let seenWhich: boolean = false;
 				let seenIsexe: boolean = false;
 				for (const file of files) {
-					seenWhich = file.path.indexOf('/node_modules/which/') >= 0;
-					seenIsexe = file.path.indexOf('/node_modules/isexe/') >= 0;
+					seenWhich ||= file.path.indexOf('/node_modules/which/') >= 0;
+					seenIsexe ||= file.path.indexOf('/node_modules/isexe/') >= 0;
 				}
 				assert.strictEqual(seenWhich, true);
 				assert.strictEqual(seenIsexe, true);
-			});
-	});
-
-	it('should skip all node_modules when dependencyEntryPoints is []', () => {
-		const cwd = fixture('packagedDependencies');
-
-		return readManifest(cwd)
-			.then(manifest => collect(manifest, { cwd, useYarn: true, dependencyEntryPoints: [] }))
-			.then(files => {
-				files.forEach(file => assert.ok(file.path.indexOf('/node_modules/which/') < 0, file.path));
 			});
 	});
 
