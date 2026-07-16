@@ -380,6 +380,21 @@ describe('collect', function () {
 			});
 	});
 
+	it('should skip all dependencies when using --dependencies and node_modules are ignored', async () => {
+		const cwd = fixture('depsTrueButIgnoreModules');
+		const manifest = await readManifest(cwd);
+		const files = await collect(manifest, { cwd, dependencies: true });
+
+		assert.strictEqual(files.length, 3);
+
+		for (const file of files) {
+			assert.ok(!/\bnode_modules\b/i.test(file.path));
+		}
+
+		const filesUnd = await collect(manifest, { cwd, dependencies: undefined });
+		assert.strictEqual(filesUnd.length, 3);
+	});
+
 	it('should skip all dependencies when using --no-dependencies', async () => {
 		const cwd = fixture('devDependencies');
 		const manifest = await readManifest(cwd);
